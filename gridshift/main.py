@@ -14,12 +14,13 @@ from gridshift.undo import UndoManager
 from gridshift.replay import ReplayRecorder, replay
 from gridshift.renderer import Renderer
 from gridshift.debug import DebugLogger
+from gridshift.themes import ThemeType
 
 
 class Game:
     """Main game controller."""
     
-    def __init__(self, stdscr, level_path: str, debug: bool = False):
+    def __init__(self, stdscr, level_path: str, debug: bool = False, theme: ThemeType = ThemeType.DEFAULT):
         """
         Initialize the game.
         
@@ -27,6 +28,7 @@ class Game:
             stdscr: Curses standard screen
             level_path: Path to the level file
             debug: Enable debug logging
+            theme: Visual theme to use
         """
         self.stdscr = stdscr
         self.level_path = level_path
@@ -39,7 +41,7 @@ class Game:
         # Initialize subsystems
         self.undo_manager = UndoManager()
         self.replay_recorder = ReplayRecorder()
-        self.renderer = Renderer(stdscr)
+        self.renderer = Renderer(stdscr, theme_type=theme)
         self.debug_logger = DebugLogger(enabled=debug)
         
         # Game state tracking
@@ -320,7 +322,7 @@ def main_curses(stdscr, args):
                 return  # User quit
     
     # Run the game
-    game = Game(stdscr, str(level_path), debug=args.debug)
+    game = Game(stdscr, str(level_path), debug=args.debug, theme=args.theme)
     game.run()
 
 
@@ -329,7 +331,20 @@ def main():
     parser = argparse.ArgumentParser(description="GridShift - A grid-based puzzle game")
     parser.add_argument("--level", "-l", help="Path to level file")
     parser.add_argument("--debug", "-d", action="store_true", help="Enable debug logging")
+    parser.add_argument("--theme", "-t", 
+                        choices=["default", "neon", "retro", "emoji"],
+                        default="default",
+                        help="Visual theme (default, neon, retro, emoji)")
     args = parser.parse_args()
+    
+    # Convert theme string to enum
+    theme_map = {
+        "default": ThemeType.DEFAULT,
+        "neon": ThemeType.NEON,
+        "retro": ThemeType.RETRO,
+        "emoji": ThemeType.EMOJI,
+    }
+    args.theme = theme_map[args.theme]
     
     try:
         curses.wrapper(main_curses, args)

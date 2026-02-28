@@ -8,6 +8,7 @@ A deterministic, grid-based puzzle game inspired by Sokoban. Push boxes onto goa
 - **Undo System**: Unlimited undo to try different strategies
 - **Replay System**: Record and replay move sequences
 - **Multiple Levels**: 5 progressively challenging puzzles
+- **Visual Themes**: Choose from 4 distinct visual styles (default, neon, retro, emoji)
 - **Polished Terminal UI**: Color-coded elements, bordered game grid, centered layout
 - **Visual Feedback**: Color-coded game elements and status messages
 - **Debug Mode**: Optional debug logging for development
@@ -36,6 +37,7 @@ Push all boxes ($) onto goal positions (.) to complete the level.
 
 ### Game Symbols
 
+**Default Theme:**
 | Symbol | Meaning |
 |--------|---------|
 | `@` | Player |
@@ -45,6 +47,11 @@ Push all boxes ($) onto goal positions (.) to complete the level.
 | `*` | Box on goal |
 | `+` | Player on goal |
 | ` ` | Empty space |
+
+**Theme Variations:**
+- **Neon**: Uses `█` for walls, `[█]` for boxes, `◆` for goals, with double-line borders (`╔═╗`)
+- **Retro**: Uses `▓` for walls, `□` for boxes, `·` for goals, all in green-on-black
+- **Emoji**: Uses 🧱 for walls, 📦 for boxes, ⭐ for goals, 🏃 for player (2-char wide cells)
 
 ### Rules
 
@@ -71,6 +78,21 @@ python -m gridshift.main --level levels/level01.txt
 python -m gridshift.main --debug
 ```
 
+### Choose a Visual Theme
+```bash
+# Default theme (classic ASCII)
+python -m gridshift.main --theme default
+
+# Neon theme (cyberpunk with magenta walls, cyan boxes, yellow goals, green player)
+python -m gridshift.main --theme neon
+
+# Retro theme (green-on-black Matrix style)
+python -m gridshift.main --theme retro
+
+# Emoji theme (fun emoji characters with 2-char wide cells)
+python -m gridshift.main --theme emoji
+```
+
 ### Help
 ```bash
 python -m gridshift.main --help
@@ -91,7 +113,7 @@ python -m pytest tests/test_engine.py -v
 python -m pytest tests/ --cov=gridshift
 ```
 
-Current test coverage: **81 tests**, all passing ✓
+Current test coverage: **99 tests**, all passing ✓
 
 ## Project Structure
 
@@ -104,6 +126,7 @@ gridshift/
 │   ├── engine.py        # Movement logic, collision, box pushing
 │   ├── undo.py          # Unlimited undo via state snapshots
 │   ├── replay.py        # Move recording and deterministic replay
+│   ├── themes.py        # Visual theme definitions (default, neon, retro, emoji)
 │   ├── renderer.py      # Curses-based terminal rendering
 │   ├── debug.py         # Debug logging utilities
 │   └── main.py          # Game loop and entry point
