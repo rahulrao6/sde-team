@@ -11,7 +11,7 @@ from gridshift.models import Direction, GameState
 from gridshift.level_loader import load_level
 from gridshift.engine import move, check_win
 from gridshift.undo import UndoManager
-from gridshift.replay import ReplayRecorder
+from gridshift.replay import ReplayRecorder, replay
 from gridshift.renderer import Renderer
 from gridshift.debug import DebugLogger
 
@@ -78,6 +78,11 @@ class Game:
         # Handle undo
         if key in (ord('z'), ord('Z')):
             self.undo()
+            return
+        
+        # Handle replay
+        if key in (ord('p'), ord('P')):
+            self.start_replay()
             return
         
         # Handle movement
@@ -151,6 +156,53 @@ class Game:
         self.undo_manager.clear()
         self.replay_recorder.clear()
         self.debug_logger.log("Level reset")
+    
+    def start_replay(self) -> None:
+        """Replay all recorded moves from the beginning."""
+        moves = self.replay_recorder.get_log()
+        
+        if not moves:
+            self.message = "No moves to replay"
+            return
+        
+        self.debug_logger.log(f"Starting replay of {len(moves)} moves")
+        
+        # Reset to initial state
+        self.state = self.initial_state.clone()
+        self.move_count = 0
+        self.won = False
+        self.undo_manager.clear()
+        
+        # Get all states from replay
+        states = replay(self.initial_state, moves)
+        
+        # Animate the replay
+        for i, state in enumerate(states[1:], 1):  # Skip initial state
+            self.state = state
+            self.move_count = i
+            self.message = f"Replaying... ({i}/{len(moves)})"
+            
+            # Check for win
+            if check_win(self.state):
+                self.won = True
+                self.message = f"🎉 Replay Complete! Solved in {self.move_count} moves!"
+            
+            # Render current frame
+            self.render()
+            self.stdscr.refresh()
+            
+            # Delay for visualization (10fps for replay)
+            time.sleep(0.1)
+        
+        # Rebuild undo history by pushing each state
+        replay_states = replay(self.initial_state, moves)
+        for state in replay_states[:-1]:  # All except final state
+            self.undo_manager.push(state)
+        
+        self.debug_logger.log(f"Replay complete: {self.move_count} moves")
+        
+        if not self.won:
+            self.message = f"Replay complete ({self.move_count} moves)"
     
     def render(self) -> None:
         """Render the current game state."""
