@@ -1,0 +1,3 @@
+# GridShift - Terminal-based Sokoban puzzle game
+# All dependencies are from Python standard library
+# No external packages required
