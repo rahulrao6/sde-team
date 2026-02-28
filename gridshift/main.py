@@ -1,151 +1,291 @@
-#!/usr/bin/env python3
-"""GridShift - A Sokoban-style puzzle game."""
+"""Main game loop and entry point for GridShift."""
 
 import curses
 import sys
+import time
 import argparse
 from pathlib import Path
+from typing import Optional
 
 from gridshift.models import Direction, GameState
 from gridshift.level_loader import load_level
 from gridshift.engine import move, check_win
 from gridshift.undo import UndoManager
+from gridshift.replay import ReplayRecorder
+from gridshift.renderer import Renderer
+from gridshift.debug import DebugLogger
 
 
-def draw_game(stdscr, state: GameState, move_count: int, undo_depth: int, message: str = ""):
-    """Draw the game state to the screen."""
-    stdscr.clear()
+class Game:
+    """Main game controller."""
     
-    # Draw title
-    stdscr.addstr(0, 0, "=== GRIDSHIFT ===", curses.A_BOLD)
-    stdscr.addstr(1, 0, f"Moves: {move_count}  Undo: {undo_depth}  {message}")
-    stdscr.addstr(2, 0, "-" * 40)
+    def __init__(self, stdscr, level_path: str, debug: bool = False):
+        """
+        Initialize the game.
+        
+        Args:
+            stdscr: Curses standard screen
+            level_path: Path to the level file
+            debug: Enable debug logging
+        """
+        self.stdscr = stdscr
+        self.level_path = level_path
+        self.level_name = Path(level_path).stem
+        
+        # Initialize game state
+        self.initial_state = load_level(level_path)
+        self.state = self.initial_state.clone()
+        
+        # Initialize subsystems
+        self.undo_manager = UndoManager()
+        self.replay_recorder = ReplayRecorder()
+        self.renderer = Renderer(stdscr)
+        self.debug_logger = DebugLogger(enabled=debug)
+        
+        # Game state tracking
+        self.move_count = 0
+        self.message = ""
+        self.running = True
+        self.won = False
+        
+        # Frame timing for 60fps cap
+        self.frame_time = 1.0 / 60.0
+        
+        # Configure curses
+        self.stdscr.nodelay(True)  # Non-blocking input
+        self.stdscr.timeout(16)  # ~60fps timeout
     
-    # Draw grid
-    for row_idx, row in enumerate(state.grid):
-        row_str = ""
-        for col_idx, tile in enumerate(row):
-            pos = (row_idx, col_idx)
-            # Check if box is on goal
-            if pos in state.box_positions and pos in state.goal_positions:
-                row_str += "*"  # Box on goal
-            # Check if player is on goal
-            elif state.player_pos.row == row_idx and state.player_pos.col == col_idx:
-                if (row_idx, col_idx) in state.goal_positions:
-                    row_str += "+"  # Player on goal
-                else:
-                    row_str += "@"  # Player
-            else:
-                row_str += tile.value
-        stdscr.addstr(row_idx + 3, 0, row_str)
+    def handle_input(self) -> None:
+        """Process keyboard input."""
+        try:
+            key = self.stdscr.getch()
+        except:
+            return
+        
+        if key == -1:  # No input
+            return
+        
+        # Handle quit
+        if key in (ord('q'), ord('Q')):
+            self.running = False
+            return
+        
+        # Handle reset
+        if key in (ord('r'), ord('R')):
+            self.reset_level()
+            return
+        
+        # Handle undo
+        if key in (ord('z'), ord('Z')):
+            self.undo()
+            return
+        
+        # Handle movement
+        direction = None
+        if key in (ord('w'), ord('W'), curses.KEY_UP):
+            direction = Direction.UP
+        elif key in (ord('s'), ord('S'), curses.KEY_DOWN):
+            direction = Direction.DOWN
+        elif key in (ord('a'), ord('A'), curses.KEY_LEFT):
+            direction = Direction.LEFT
+        elif key in (ord('d'), ord('D'), curses.KEY_RIGHT):
+            direction = Direction.RIGHT
+        
+        if direction:
+            self.make_move(direction)
     
-    # Draw controls
-    controls_y = state.height + 4
-    stdscr.addstr(controls_y, 0, "-" * 40)
-    stdscr.addstr(controls_y + 1, 0, "Controls: WASD/Arrows=Move  Z=Undo  R=Reset  Q=Quit")
+    def make_move(self, direction: Direction) -> None:
+        """
+        Attempt to move in the given direction.
+        
+        Args:
+            direction: Direction to move
+        """
+        if self.won:
+            return
+        
+        # Save state before move for undo
+        self.undo_manager.push(self.state)
+        
+        # Attempt the move
+        new_state, moved = move(self.state, direction)
+        
+        if moved:
+            self.state = new_state
+            self.move_count += 1
+            self.replay_recorder.record(direction)
+            self.message = ""
+            
+            self.debug_logger.log(f"Move {self.move_count}: {direction.name}")
+            
+            # Check for win
+            if check_win(self.state):
+                self.won = True
+                self.message = f"🎉 Level Complete! Solved in {self.move_count} moves! Press R to restart or Q to quit."
+                self.debug_logger.log("LEVEL WON!")
+        else:
+            # Move was blocked, pop the saved state
+            self.undo_manager.pop()
+            self.message = "Blocked!"
     
-    stdscr.refresh()
+    def undo(self) -> None:
+        """Undo the last move."""
+        previous_state = self.undo_manager.pop()
+        if previous_state:
+            self.state = previous_state
+            self.move_count -= 1
+            if self.move_count < 0:
+                self.move_count = 0
+            self.message = "Undo"
+            self.won = False  # Allow continuing after undo from win state
+            self.debug_logger.log(f"Undo to move {self.move_count}")
+        else:
+            self.message = "Nothing to undo"
+    
+    def reset_level(self) -> None:
+        """Reset the level to initial state."""
+        self.state = self.initial_state.clone()
+        self.move_count = 0
+        self.message = "Level reset"
+        self.won = False
+        self.undo_manager.clear()
+        self.replay_recorder.clear()
+        self.debug_logger.log("Level reset")
+    
+    def render(self) -> None:
+        """Render the current game state."""
+        self.renderer.render(
+            state=self.state,
+            move_count=self.move_count,
+            message=self.message,
+            level_name=self.level_name,
+            undo_depth=self.undo_manager.depth
+        )
+    
+    def run(self) -> None:
+        """Main game loop."""
+        self.debug_logger.log(f"Starting level: {self.level_name}")
+        self.debug_logger.dump_state(self.initial_state)
+        
+        while self.running:
+            frame_start = time.time()
+            
+            self.handle_input()
+            self.render()
+            
+            # Frame rate limiting
+            elapsed = time.time() - frame_start
+            sleep_time = self.frame_time - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+
+def list_levels(levels_dir: Path) -> list[Path]:
+    """
+    Find all .txt level files in the levels directory.
+    
+    Args:
+        levels_dir: Path to the levels directory
+        
+    Returns:
+        Sorted list of level file paths
+    """
+    if not levels_dir.exists():
+        return []
+    return sorted(levels_dir.glob("*.txt"))
+
+
+def select_level(stdscr, levels: list[Path]) -> Optional[Path]:
+    """
+    Show a level selection menu.
+    
+    Args:
+        stdscr: Curses standard screen
+        levels: List of available level paths
+        
+    Returns:
+        Selected level path, or None if cancelled
+    """
+    if not levels:
+        return None
+    
+    curses.curs_set(0)
+    current = 0
+    
+    while True:
+        stdscr.clear()
+        stdscr.addstr(0, 0, "GridShift - Select Level")
+        stdscr.addstr(1, 0, "=" * 40)
+        
+        for idx, level_path in enumerate(levels):
+            prefix = "> " if idx == current else "  "
+            stdscr.addstr(3 + idx, 0, f"{prefix}{level_path.name}")
+        
+        stdscr.addstr(5 + len(levels), 0, "Use arrow keys to select, Enter to play, Q to quit")
+        stdscr.refresh()
+        
+        key = stdscr.getch()
+        
+        if key == curses.KEY_UP and current > 0:
+            current -= 1
+        elif key == curses.KEY_DOWN and current < len(levels) - 1:
+            current += 1
+        elif key in (curses.KEY_ENTER, ord('\n'), ord('\r')):
+            return levels[current]
+        elif key in (ord('q'), ord('Q')):
+            return None
+
+
+def main_curses(stdscr, args):
+    """
+    Curses wrapper for the main game.
+    
+    Args:
+        stdscr: Curses standard screen
+        args: Command-line arguments
+    """
+    # Determine level to load
+    if args.level:
+        level_path = Path(args.level)
+        if not level_path.exists():
+            print(f"Error: Level file not found: {args.level}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Look for levels in the levels/ directory
+        levels_dir = Path(__file__).parent.parent / "levels"
+        levels = list_levels(levels_dir)
+        
+        if not levels:
+            print("Error: No level files found in levels/", file=sys.stderr)
+            sys.exit(1)
+        
+        if len(levels) == 1:
+            level_path = levels[0]
+        else:
+            # Show selection menu
+            level_path = select_level(stdscr, levels)
+            if level_path is None:
+                return  # User quit
+    
+    # Run the game
+    game = Game(stdscr, str(level_path), debug=args.debug)
+    game.run()
 
 
 def main():
-    """Main game loop."""
-    parser = argparse.ArgumentParser(description="GridShift - Sokoban puzzle game")
-    parser.add_argument("--level", default="levels/level01.txt", help="Level file to load")
+    """Entry point for the GridShift game."""
+    parser = argparse.ArgumentParser(description="GridShift - A grid-based puzzle game")
+    parser.add_argument("--level", "-l", help="Path to level file")
+    parser.add_argument("--debug", "-d", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
     
-    # Load level
     try:
-        initial_state = load_level(args.level)
-    except FileNotFoundError:
-        print(f"Error: Level file '{args.level}' not found")
+        curses.wrapper(main_curses, args)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    except ValueError as e:
-        print(f"Error: Invalid level file - {e}")
-        sys.exit(1)
-    
-    # Initialize curses
-    stdscr = curses.initscr()
-    curses.noecho()
-    curses.cbreak()
-    stdscr.keypad(True)
-    curses.curs_set(0)  # Hide cursor
-    
-    try:
-        # Game state
-        current_state = initial_state
-        undo_manager = UndoManager()
-        move_count = 0
-        message = "Push all boxes ($) onto goals (.) to win!"
-        
-        while True:
-            # Check win condition
-            if check_win(current_state):
-                draw_game(stdscr, current_state, move_count, undo_manager.depth, "🎉 YOU WIN! Press Q to quit")
-                stdscr.getch()
-                break
-            
-            # Draw current state
-            draw_game(stdscr, current_state, move_count, undo_manager.depth, message)
-            message = ""
-            
-            # Get input
-            key = stdscr.getch()
-            
-            # Handle quit
-            if key in (ord('q'), ord('Q')):
-                break
-            
-            # Handle reset
-            if key in (ord('r'), ord('R')):
-                current_state = initial_state
-                undo_manager.clear()
-                move_count = 0
-                message = "Game reset!"
-                continue
-            
-            # Handle undo
-            if key in (ord('z'), ord('Z')):
-                prev_state = undo_manager.pop()
-                if prev_state:
-                    current_state = prev_state
-                    move_count -= 1
-                    message = "Undo!"
-                else:
-                    message = "Nothing to undo"
-                continue
-            
-            # Handle movement
-            direction = None
-            if key in (ord('w'), ord('W'), curses.KEY_UP):
-                direction = Direction.UP
-            elif key in (ord('s'), ord('S'), curses.KEY_DOWN):
-                direction = Direction.DOWN
-            elif key in (ord('a'), ord('A'), curses.KEY_LEFT):
-                direction = Direction.LEFT
-            elif key in (ord('d'), ord('D'), curses.KEY_RIGHT):
-                direction = Direction.RIGHT
-            
-            if direction:
-                # Save state for undo
-                undo_manager.push(current_state)
-                
-                # Try move
-                new_state, moved = move(current_state, direction)
-                
-                if moved:
-                    current_state = new_state
-                    move_count += 1
-                else:
-                    # Move was blocked, remove from undo
-                    undo_manager.pop()
-                    message = "Blocked!"
-    
-    finally:
-        # Restore terminal
-        curses.nocbreak()
-        stdscr.keypad(False)
-        curses.echo()
-        curses.endwin()
 
 
 if __name__ == "__main__":
