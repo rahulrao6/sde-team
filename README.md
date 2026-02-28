@@ -33,6 +33,7 @@ Push all boxes ($) onto goal positions (.) to complete the level.
 - **Undo**: `Z` - Undo the last move
 - **Replay**: `P` - Replay all recorded moves from the beginning
 - **Next Level**: `N` - Advance to next level (only after completing current level)
+- **Summary**: `S` - View game statistics and completed levels
 - **Quit**: `Q` - Exit the game
 
 ### Game Symbols
@@ -61,6 +62,7 @@ Push all boxes ($) onto goal positions (.) to complete the level.
 - **Level Progression**: Complete all 5 levels in sequence with the N key
 - **Replay System**: Watch your solution played back with the P key
 - **Unlimited Undo**: Try different strategies with the Z key
+- **Game Statistics**: View detailed summary of completed levels, moves, and time with the S key
 
 ## Running the Game
 

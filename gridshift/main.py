@@ -54,6 +54,11 @@ class Game:
         self.won = False
         self.load_next_level = False
         
+        # Statistics tracking
+        self.level_stats = []  # List of (level_name, moves, time) tuples
+        self.level_start_time = time.time()
+        self.total_moves = 0
+        
         # Frame timing for 60fps cap
         self.frame_time = 1.0 / 60.0
         
@@ -111,6 +116,11 @@ class Game:
             self.next_level()
             return
         
+        # Handle summary (show game-over statistics)
+        if key in (ord('s'), ord('S')):
+            self.show_summary()
+            return
+        
         # Handle movement
         direction = None
         if key in (ord('w'), ord('W'), curses.KEY_UP):
@@ -152,8 +162,19 @@ class Game:
             # Check for win
             if check_win(self.state):
                 self.won = True
-                next_level_msg = " Press N for next level," if self.has_next_level() else ""
-                self.message = f"🎉 Level Complete! Solved in {self.move_count} moves!{next_level_msg} R to restart, or Q to quit."
+                
+                # Record level statistics
+                level_time = time.time() - self.level_start_time
+                self.level_stats.append((self.level_name, self.move_count, level_time))
+                self.total_moves += self.move_count
+                
+                # Check if this is the last level
+                if not self.has_next_level():
+                    self.message = f"🎉 Level Complete! Solved in {self.move_count} moves! Press S for summary, R to restart, or Q to quit."
+                else:
+                    next_level_msg = " Press N for next level," if self.has_next_level() else ""
+                    self.message = f"🎉 Level Complete! Solved in {self.move_count} moves!{next_level_msg} R to restart, or Q to quit."
+                
                 self.debug_logger.log("LEVEL WON!")
         else:
             # Move was blocked, pop the saved state
@@ -182,6 +203,7 @@ class Game:
         self.won = False
         self.undo_manager.clear()
         self.replay_recorder.clear()
+        self.level_start_time = time.time()  # Reset timer
         self.debug_logger.log("Level reset")
     
     def has_next_level(self) -> bool:
@@ -214,9 +236,78 @@ class Game:
         self.won = False
         self.undo_manager.clear()
         self.replay_recorder.clear()
+        self.level_start_time = time.time()  # Reset timer for new level
         
         self.debug_logger.log(f"Started level {self.current_level_index + 1}")
         self.debug_logger.dump_state(self.initial_state)
+    
+    def show_summary(self) -> None:
+        """Display game-over summary with statistics."""
+        if not self.level_stats:
+            self.message = "No completed levels yet!"
+            return
+        
+        # Clear screen and show summary
+        self.stdscr.clear()
+        max_y, max_x = self.stdscr.getmaxyx()
+        
+        # Title
+        title = "═══ GAME SUMMARY ═══"
+        title_y = 2
+        title_x = max(0, (max_x - len(title)) // 2)
+        self.stdscr.addstr(title_y, title_x, title, curses.A_BOLD)
+        
+        # Summary stats
+        row = title_y + 2
+        total_time = sum(t for _, _, t in self.level_stats)
+        
+        summary_lines = [
+            f"Levels Completed: {len(self.level_stats)}/{len(self.all_levels) if self.all_levels else '?'}",
+            f"Total Moves: {self.total_moves}",
+            f"Total Time: {self._format_time(total_time)}",
+            "",
+            "Level Details:",
+            "-" * 50
+        ]
+        
+        for line in summary_lines:
+            if row < max_y - 2:
+                line_x = max(0, (max_x - len(line)) // 2)
+                self.stdscr.addstr(row, line_x, line)
+                row += 1
+        
+        # Individual level stats
+        for level_name, moves, level_time in self.level_stats:
+            if row < max_y - 4:
+                stat_line = f"{level_name}: {moves} moves in {self._format_time(level_time)}"
+                line_x = max(0, (max_x - len(stat_line)) // 2)
+                self.stdscr.addstr(row, line_x, stat_line)
+                row += 1
+        
+        # Footer
+        if row < max_y - 2:
+            row += 1
+            footer = "Press any key to continue..."
+            footer_x = max(0, (max_x - len(footer)) // 2)
+            self.stdscr.addstr(row, footer_x, footer, curses.A_DIM)
+        
+        self.stdscr.refresh()
+        
+        # Wait for keypress
+        self.stdscr.nodelay(False)
+        self.stdscr.getch()
+        self.stdscr.nodelay(True)
+        
+        self.debug_logger.log("Summary displayed")
+    
+    def _format_time(self, seconds: float) -> str:
+        """Format time in seconds to a readable string."""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        else:
+            minutes = int(seconds // 60)
+            secs = seconds % 60
+            return f"{minutes}m {secs:.1f}s"
     
     def start_replay(self) -> None:
         """Replay all recorded moves from the beginning."""
