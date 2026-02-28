@@ -1,0 +1,3 @@
+# GridShift - Python stdlib only, no external dependencies for game logic
+# pytest for testing
+pytest>=7.0.0
