@@ -55,6 +55,13 @@ Push all boxes ($) onto goal positions (.) to complete the level.
 4. Cannot push boxes through walls or other boxes
 5. All boxes must reach goals to win
 
+### Features
+
+- **Terminal Resize Support**: The game automatically adapts to terminal size changes
+- **Level Progression**: Complete all 5 levels in sequence with the N key
+- **Replay System**: Watch your solution played back with the P key
+- **Unlimited Undo**: Try different strategies with the Z key
+
 ## Running the Game
 
 ### Play with Level Selection Menu
