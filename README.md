@@ -8,7 +8,8 @@ A deterministic, grid-based puzzle game inspired by Sokoban. Push boxes onto goa
 - **Undo System**: Unlimited undo to try different strategies
 - **Replay System**: Record and replay move sequences
 - **Multiple Levels**: 5 progressively challenging puzzles
-- **Terminal UI**: Clean curses-based interface
+- **Polished Terminal UI**: Color-coded elements, bordered game grid, centered layout
+- **Visual Feedback**: Color-coded game elements and status messages
 - **Debug Mode**: Optional debug logging for development
 
 ## Installation
