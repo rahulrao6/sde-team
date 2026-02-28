@@ -32,6 +32,7 @@ Push all boxes ($) onto goal positions (.) to complete the level.
 - **Reset**: `R` - Restart the current level
 - **Undo**: `Z` - Undo the last move
 - **Replay**: `P` - Replay all recorded moves from the beginning
+- **Next Level**: `N` - Advance to next level (only after completing current level)
 - **Quit**: `Q` - Exit the game
 
 ### Game Symbols

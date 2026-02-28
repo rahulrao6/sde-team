@@ -19,7 +19,7 @@ from gridshift.debug import DebugLogger
 class Game:
     """Main game controller."""
     
-    def __init__(self, stdscr, level_path: str, debug: bool = False):
+    def __init__(self, stdscr, level_path: str, debug: bool = False, all_levels: Optional[list[Path]] = None):
         """
         Initialize the game.
         
@@ -27,10 +27,15 @@ class Game:
             stdscr: Curses standard screen
             level_path: Path to the level file
             debug: Enable debug logging
+            all_levels: Optional list of all available levels for progression
         """
         self.stdscr = stdscr
         self.level_path = level_path
         self.level_name = Path(level_path).stem
+        
+        # Level progression tracking
+        self.all_levels = all_levels or []
+        self.current_level_index = self._find_current_level_index()
         
         # Initialize game state
         self.initial_state = load_level(level_path)
@@ -47,6 +52,7 @@ class Game:
         self.message = ""
         self.running = True
         self.won = False
+        self.load_next_level = False
         
         # Frame timing for 60fps cap
         self.frame_time = 1.0 / 60.0
@@ -54,6 +60,16 @@ class Game:
         # Configure curses
         self.stdscr.nodelay(True)  # Non-blocking input
         self.stdscr.timeout(16)  # ~60fps timeout
+    
+    def _find_current_level_index(self) -> int:
+        """Find the index of the current level in all_levels."""
+        if not self.all_levels:
+            return -1
+        current_path = Path(self.level_path)
+        for i, level in enumerate(self.all_levels):
+            if level.resolve() == current_path.resolve():
+                return i
+        return -1
     
     def handle_input(self) -> None:
         """Process keyboard input."""
@@ -83,6 +99,11 @@ class Game:
         # Handle replay
         if key in (ord('p'), ord('P')):
             self.start_replay()
+            return
+        
+        # Handle next level (when won)
+        if key in (ord('n'), ord('N')) and self.won:
+            self.next_level()
             return
         
         # Handle movement
@@ -126,7 +147,8 @@ class Game:
             # Check for win
             if check_win(self.state):
                 self.won = True
-                self.message = f"🎉 Level Complete! Solved in {self.move_count} moves! Press R to restart or Q to quit."
+                next_level_msg = " Press N for next level," if self.has_next_level() else ""
+                self.message = f"🎉 Level Complete! Solved in {self.move_count} moves!{next_level_msg} R to restart, or Q to quit."
                 self.debug_logger.log("LEVEL WON!")
         else:
             # Move was blocked, pop the saved state
@@ -156,6 +178,40 @@ class Game:
         self.undo_manager.clear()
         self.replay_recorder.clear()
         self.debug_logger.log("Level reset")
+    
+    def has_next_level(self) -> bool:
+        """Check if there is a next level available."""
+        return (self.all_levels and 
+                self.current_level_index >= 0 and 
+                self.current_level_index < len(self.all_levels) - 1)
+    
+    def next_level(self) -> None:
+        """Load the next level in the sequence."""
+        if not self.has_next_level():
+            self.message = "No more levels!"
+            return
+        
+        next_index = self.current_level_index + 1
+        next_level_path = str(self.all_levels[next_index])
+        
+        self.debug_logger.log(f"Loading next level: {next_level_path}")
+        
+        # Load the new level
+        self.level_path = next_level_path
+        self.level_name = Path(next_level_path).stem
+        self.current_level_index = next_index
+        self.initial_state = load_level(next_level_path)
+        self.state = self.initial_state.clone()
+        
+        # Reset game state
+        self.move_count = 0
+        self.message = f"Level {self.current_level_index + 1}/{len(self.all_levels)}"
+        self.won = False
+        self.undo_manager.clear()
+        self.replay_recorder.clear()
+        
+        self.debug_logger.log(f"Started level {self.current_level_index + 1}")
+        self.debug_logger.dump_state(self.initial_state)
     
     def start_replay(self) -> None:
         """Replay all recorded moves from the beginning."""
@@ -296,6 +352,10 @@ def main_curses(stdscr, args):
         stdscr: Curses standard screen
         args: Command-line arguments
     """
+    # Look for all available levels for progression
+    levels_dir = Path(__file__).parent.parent / "levels"
+    all_levels = list_levels(levels_dir)
+    
     # Determine level to load
     if args.level:
         level_path = Path(args.level)
@@ -303,24 +363,20 @@ def main_curses(stdscr, args):
             print(f"Error: Level file not found: {args.level}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Look for levels in the levels/ directory
-        levels_dir = Path(__file__).parent.parent / "levels"
-        levels = list_levels(levels_dir)
-        
-        if not levels:
+        if not all_levels:
             print("Error: No level files found in levels/", file=sys.stderr)
             sys.exit(1)
         
-        if len(levels) == 1:
-            level_path = levels[0]
+        if len(all_levels) == 1:
+            level_path = all_levels[0]
         else:
             # Show selection menu
-            level_path = select_level(stdscr, levels)
+            level_path = select_level(stdscr, all_levels)
             if level_path is None:
                 return  # User quit
     
-    # Run the game
-    game = Game(stdscr, str(level_path), debug=args.debug)
+    # Run the game with all levels for progression
+    game = Game(stdscr, str(level_path), debug=args.debug, all_levels=all_levels)
     game.run()
 
 
