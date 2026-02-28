@@ -81,6 +81,11 @@ class Game:
         if key == -1:  # No input
             return
         
+        # Handle terminal resize
+        if key == curses.KEY_RESIZE:
+            self.handle_resize()
+            return
+        
         # Handle quit
         if key in (ord('q'), ord('Q')):
             self.running = False
@@ -259,6 +264,35 @@ class Game:
         
         if not self.won:
             self.message = f"Replay complete ({self.move_count} moves)"
+    
+    def handle_resize(self) -> None:
+        """Handle terminal resize events."""
+        # Update screen dimensions
+        curses.update_lines_cols()
+        
+        # Get new terminal size
+        max_y, max_x = self.stdscr.getmaxyx()
+        
+        # Check if terminal is too small for the game
+        min_width = self.state.width + 10  # Grid + borders + padding
+        min_height = self.state.height + 15  # Grid + HUD + controls + legend
+        
+        if max_x < min_width or max_y < min_height:
+            self.message = f"Terminal too small! Need at least {min_width}x{min_height}"
+        else:
+            # Clear previous resize warning if any
+            if "too small" in self.message.lower():
+                self.message = ""
+        
+        # Reinitialize renderer with new screen size
+        self.renderer = Renderer(self.stdscr)
+        
+        # Force a full redraw
+        self.stdscr.clear()
+        self.render()
+        self.stdscr.refresh()
+        
+        self.debug_logger.log(f"Terminal resized to {max_x}x{max_y}")
     
     def render(self) -> None:
         """Render the current game state."""
